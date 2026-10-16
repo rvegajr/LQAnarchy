@@ -3,6 +3,9 @@
 Why the rank on the back of your phaser comes in batches, and why the final download can reshuffle the scoreboard.
 Checked against LQX's own compiled code, not guessed.
 
+**The full technical deep dive is [THE-FAMOUS-LQ-DOWNLOAD.md](THE-FAMOUS-LQ-DOWNLOAD.md).** It covers every byte on the
+radio, why the download takes over a minute, a full 8v8 game tracked broadcast by broadcast, and 1,000 simulated games.
+
 ## For players: the short version
 
 - **Your gun doesn't work out your score. The PC does.** A pack only records who tagged *it*. Your tags live in other
@@ -15,10 +18,12 @@ Checked against LQX's own compiled code, not guessed.
 - **Accuracy is worth up to 100 points**, as much as 10 tags. Each percentage point of accuracy is worth 10 points,
   so **10 % accuracy already earns the full 100**.
 - **A missed radio poll costs nothing.** Each reply carries the pack's running totals, so the next one catches up.
-- **A failed final download does cost.** If the PC can't download a pack after 25 tries, it scores that player from
-  the last mid-game poll: 333 shots (most of the accuracy bonus gone), and no tags since that poll. That also costs
-  everyone who tagged that player late. Sometimes another player's pack really is playing against you.
-- **Shoulder tags only arrive with the final download**, so they can move the scoreboard at the end too.
+- **A failed final download does cost.** If a pack's final score never arrives, LQX scores that player from the last
+  mid-game poll: 333 shots (most of the accuracy bonus gone), and no tags since that poll. That also costs everyone who
+  tagged that player late. LQX gives up after 25 tries, but at the site it was always the operator who ended the wait.
+  Sometimes another player's pack really is playing against you.
+- **Shoulder tags count during the game too.** Live replies fold them into the phaser column, and with the site's
+  points a phaser tag and a shoulder tag are worth the same.
 
 ## The code checked
 
@@ -175,7 +180,8 @@ ShotsUsed = packUploadData.ShotsUsed;
 
 Packs report running totals, so the next good reply carries everything. But after the game, if a pack's final
 download keeps failing, LQX gives up and keeps whatever it had from that pack's last live poll, including
-`ShotsUsed = 333` (`GameEngine.CollectFinalScoreFromPacks`):
+`ShotsUsed = 333` (`GameEngine.CollectFinalScoreFromPacks`). The same happens when the operator ends the collection
+early, which is how every missing score at the site actually happened; the 25-try limit never fired in its logs.
 
 ```csharp
 if (packUploadData == null || packUploadData.PayloadPackId != deviceViewModel.DeviceId)
@@ -210,9 +216,13 @@ for (int i = 0; i < 50; i++)
 }
 ```
 
-So shoulder tags only reach the score at the final download. One open question: the pack's firmware may fold
-shoulder tags into the phaser column of its live reply. Nobody has captured a live reply with shoulder tags in it yet,
-so this page only claims what the PC does with what it receives.
+The packs fill the third live column with **phaser and shoulder tags together**. The site's radio logs show this:
+comparing 10,971 entries with the same packs' final uploads, the third column matches phaser + shoulder, and the bytes
+after it are always empty. So during the game shoulder tags score as phaser tags. With the site's points (+10 to the
+shooter either way, −3 to the target either way) that changes nothing.
+
+(The first version of this page said shoulder tags were missing until the final download. That was wrong: it read the
+parser without checking what real packs send.)
 
 ## 6. The checks, run through LQX's own code
 
@@ -253,8 +263,8 @@ target:
 **Missed poll:** a pack reports 5 tags, its next poll is lost, and its final upload reports 12. The attacker is
 credited with 12, not 5 and not 17.
 
-**Shoulder tags:** 6 front and 4 shoulder tags. Live parser: 0 shoulder tags, 60 points. Final parser: 4 shoulder
-tags, 100 points.
+**Shoulder tags:** 6 front and 4 shoulder tags, sent the way real packs send them. Live parser: 4 in the phaser
+column, 0 in the shoulder column, 100 points. Final parser: 0 and 4, 100 points.
 
 **Ties:** scores 100, 100, 90, −145 rank 1, 1, 2, 3.
 
@@ -266,6 +276,11 @@ tags, 100 points.
 | Advanced Team | 0 | 0 | −25 |
 
 ### Run it yourself
+
+Without LQX: `python3 tools/lqdownload.py --self-test` checks a plain-Python port of the frames and the scoring
+against LQX's own results, including a full 8v8 game.
+
+With LQX:
 
 1. Copy `Console.exe`, `Versent.LQX.Core.dll` and `log4net.dll` from an LQX install (`C:\Program Files (x86)\LQX`)
    into `scoring-check/lqx/`, and compare their SHA-256 hashes with the table above.
@@ -279,4 +294,4 @@ tags, 100 points.
   files, only short excerpts of decompiled code quoted to document how scoring works.
 - No player data is included. Site figures (poll timing, download failure rates) are aggregates from one site's logs
   and database.
-- Corrections are welcome, especially from anyone who can capture a live reply containing shoulder tags.
+- Corrections are welcome.
