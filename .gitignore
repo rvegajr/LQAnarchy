@@ -1,0 +1,5 @@
+bin/
+obj/
+lqx/
+*.user
+.DS_Store
